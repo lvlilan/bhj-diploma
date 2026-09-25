@@ -1,106 +1,161 @@
-/**
- * Класс TransactionsPage управляет
- * страницей отображения доходов и
- * расходов конкретного счёта
- * */
 class TransactionsPage {
-  /**
-   * Если переданный элемент не существует,
-   * необходимо выкинуть ошибку.
-   * Сохраняет переданный элемент и регистрирует события
-   * через registerEvents()
-   * */
-  constructor( element ) {
-
+  constructor(element) {
+    if (!element) {
+      throw new Error('Элемент страницы транзакций не найден');
+    }
+    this.element = element;
+    this.currentAccountId = null;
+    this.registerEvents();
   }
 
-  /**
-   * Вызывает метод render для отрисовки страницы
-   * */
   update() {
-
+    if (this.currentAccountId) {
+      this.render({ account_id: this.currentAccountId });
+    }
   }
 
-  /**
-   * Отслеживает нажатие на кнопку удаления транзакции
-   * и удаления самого счёта. Внутри обработчика пользуйтесь
-   * методами TransactionsPage.removeTransaction и
-   * TransactionsPage.removeAccount соответственно
-   * */
   registerEvents() {
+    const removeAccountBtn = this.element.querySelector('.remove-account');
+    if (removeAccountBtn) {
+      removeAccountBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.removeAccount();
+      });
+    }
 
+    this.element.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('.transaction__remove');
+      if (removeBtn) {
+        e.preventDefault();
+        const id = removeBtn.dataset.id;
+        this.removeTransaction(id);
+      }
+    });
   }
 
-  /**
-   * Удаляет счёт. Необходимо показать диаголовое окно (с помощью confirm())
-   * Если пользователь согласен удалить счёт, вызовите
-   * Account.remove, а также TransactionsPage.clear с
-   * пустыми данными для того, чтобы очистить страницу.
-   * По успешному удалению необходимо вызвать метод App.updateWidgets() и App.updateForms(),
-   * либо обновляйте только виджет со счетами и формы создания дохода и расхода
-   * для обновления приложения
-   * */
   removeAccount() {
+    if (!this.currentAccountId) {
+      return;
+    }
 
+    const confirmed = confirm('Вы уверены, что хотите удалить счёт?');
+    if (!confirmed) {
+      return;
+    }
+
+    Account.remove({ id: this.currentAccountId }, (err, response) => {
+      if (response && response.success) {
+        this.currentAccountId = null;
+        this.clear();
+        App.updateWidgets();
+        App.updateForms();
+      }
+    });
   }
 
-  /**
-   * Удаляет транзакцию (доход или расход). Требует
-   * подтверждеия действия (с помощью confirm()).
-   * По удалению транзакции вызовите метод App.update(),
-   * либо обновляйте текущую страницу (метод update) и виджет со счетами
-   * */
-  removeTransaction( id ) {
+  removeTransaction(id) {
+    const confirmed = confirm('Вы уверены, что хотите удалить транзакцию?');
+    if (!confirmed) {
+      return;
+    }
 
+    Transaction.remove({ id }, (err, response) => {
+      if (response && response.success) {
+        App.update();
+      }
+    });
   }
 
-  /**
-   * С помощью Account.get() получает название счёта и отображает
-   * его через TransactionsPage.renderTitle.
-   * Получает список Transaction.list и полученные данные передаёт
-   * в TransactionsPage.renderTransactions()
-   * */
-  render(options){
+  render(options = {}) {
+    const accountId = options.account_id;
+    if (!accountId) {
+      return;
+    }
 
+    this.currentAccountId = accountId;
+
+    Account.get(accountId, (err, response) => {
+      if (response && response.success && response.data) {
+        this.renderTitle(response.data.name);
+      }
+    });
+
+    Transaction.list({ account_id: accountId }, (err, response) => {
+      if (response && response.success && response.data) {
+        this.renderTransactions(response.data);
+      } else {
+        this.renderTransactions([]);
+      }
+    });
   }
 
-  /**
-   * Очищает страницу. Вызывает
-   * TransactionsPage.renderTransactions() с пустым массивом.
-   * Устанавливает заголовок: «Название счёта»
-   * */
   clear() {
-
+    this.renderTransactions([]);
+    this.renderTitle('Название счёта');
+    this.currentAccountId = null;
   }
 
-  /**
-   * Устанавливает заголовок в элемент .content-title
-   * */
-  renderTitle(name){
-
+  renderTitle(name) {
+    const title = this.element.querySelector('.content-title');
+    if (title) {
+      title.textContent = name;
+    }
   }
 
-  /**
-   * Форматирует дату в формате 2019-03-10 03:20:41 (строка)
-   * в формат «10 марта 2019 г. в 03:20»
-   * */
-  formatDate(date){
+  formatDate(date) {
+    const d = new Date(date);
+    const months = [
+      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+    ];
 
+    const day = d.getDate();
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+
+    return `${day} ${month} ${year} г. в ${hours}:${minutes}`;
   }
 
-  /**
-   * Формирует HTML-код транзакции (дохода или расхода).
-   * item - объект с информацией о транзакции
-   * */
-  getTransactionHTML(item){
+  getTransactionHTML(item) {
+    const isIncome = item.type === 'income';
+    const typeClass = isIncome ? 'transaction_income' : 'transaction_expense';
+    const iconClass = isIncome ? 'fa-thumbs-o-up' : 'fa-thumbs-o-down';
 
+    return `
+      <div class="transaction ${typeClass}">
+        <div class="transaction__details">
+          <div class="transaction__icon">
+            <span class="fa ${iconClass}"></span>
+          </div>
+          <div class="transaction__title">
+            <div class="transaction__name">${item.name}</div>
+            <div class="transaction__date">${this.formatDate(item.created_at)}</div>
+          </div>
+          <div class="transaction__summ">
+            ${item.sum}
+          </div>
+          <div class="transaction__controls">
+            <button class="btn btn-danger transaction__remove" data-id="${item.id}">
+              <i class="fa fa-trash"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
-  /**
-   * Отрисовывает список транзакций на странице
-   * используя getTransactionHTML
-   * */
-  renderTransactions(data){
+  renderTransactions(data) {
+    const content = this.element.querySelector('.content');
+    if (!content) {
+      return;
+    }
 
+    content.innerHTML = '';
+
+    data.forEach((item) => {
+      content.insertAdjacentHTML('beforeend', this.getTransactionHTML(item));
+    });
   }
 }
